@@ -82,6 +82,7 @@ sub _vms_efs {
 sub _catname {
     my($from, $to) = @_;
     if (not defined &basename) {
+print STDERR "AAA:", "\n";
 	require File::Basename;
 	import  File::Basename 'basename';
     }
@@ -97,8 +98,16 @@ sub _eq {
             ? "$_"
             : $_
     } (@_);
-    return '' if ( (ref $from) xor (ref $to) );
-    return $from == $to if ref $from;
+#    return '' if ( (ref $from) xor (ref $to) );
+    if ( (ref $from) xor (ref $to) ) {
+print STDERR "BBB:", "\n";
+        return '';
+    }
+#    return $from == $to if ref $from;
+    if (ref $from) {
+print STDERR "CCC:", "\n";
+        return $from == $to;
+    }
     return $from eq $to;
 }
 
@@ -111,10 +120,16 @@ sub copy {
 
     my $size;
     if (@_) {
+print STDERR "DDD:", "\n";
 	$size = shift(@_) + 0;
-	croak("Bad buffer size for copy: $size\n") unless ($size > 0);
+#	croak("Bad buffer size for copy: $size\n") unless ($size > 0);
+	unless ($size > 0) {
+print STDERR "EEE:", "\n";
+        croak("Bad buffer size for copy: $size\n"); 
     }
+}
 
+    # TODO: analyze this nested ternary
     my $from_a_handle = (ref($from)
 			 ? (ref($from) eq 'GLOB'
 			    || UNIVERSAL::isa($from, 'GLOB')
@@ -127,26 +142,32 @@ sub copy {
 			 : (ref(\$to) eq 'GLOB'));
 
     if (_eq($from, $to)) { # works for references, too
+print STDERR "FFF:", "\n";
 	carp("'$from' and '$to' are identical (not copied)");
         return 0;
     }
 
     if (!$from_a_handle && !$to_a_handle && -d $to && ! -d $from) {
+print STDERR "GGG:", "\n";
 	$to = _catname($from, $to);
     }
 
     if ((($Config{d_symlink} && $Config{d_readlink}) || $Config{d_link}) &&
 	!($^O eq 'MSWin32' || $^O eq 'os2')) {
+print STDERR "HHH:", "\n";
 	my @fs = stat($from);
 	if (@fs) {
+print STDERR "III:", "\n";
 	    my @ts = stat($to);
 	    if (@ts && $fs[0] == $ts[0] && $fs[1] == $ts[1] && !-p $from) {
+print STDERR "JJJ:", "\n";
 		carp("'$from' and '$to' are identical (not copied)");
                 return 0;
 	    }
 	}
     }
     elsif (_eq($from, $to)) {
+print STDERR "JJJ:", "\n";
 	carp("'$from' and '$to' are identical (not copied)");
 	return 0;
     }
@@ -158,6 +179,7 @@ sub copy {
 	&& !($from_a_handle && $^O eq 'NetWare')
        )
     {
+print STDERR "KKK:", "\n";
 	my $copy_to = $to;
 
         if ($^O eq 'VMS' && -e $from) {
@@ -211,8 +233,10 @@ sub copy {
 
     my $from_h;
     if ($from_a_handle) {
+print STDERR "LLL:", "\n";
        $from_h = $from;
     } else {
+print STDERR "MMM:", "\n";
        open $from_h, "<", $from or goto fail_open1;
        binmode $from_h or die "($!,$^E)";
        $closefrom = 1;
@@ -221,27 +245,53 @@ sub copy {
     # Seems most logical to do this here, in case future changes would want to
     # make this croak for some reason.
     unless (defined $size) {
+print STDERR "NNN:", "\n";
+# TODO: Analyze
 	$size = tied(*$from_h) ? 0 : -s $from_h || 0;
-	$size = 1024 if ($size < 512);
-	$size = $Too_Big if ($size > $Too_Big);
+#	$size = 1024 if ($size < 512);
+	if ($size < 512) {
+print STDERR "OOO:", "\n";
+        $size = 1024;
     }
+#	$size = $Too_Big if ($size > $Too_Big);
+	if ($size > $Too_Big) {
+print STDERR "PPP:", "\n";
+        $size = $Too_Big;
+    }
+}
 
     my $to_h;
     if ($to_a_handle) {
+print STDERR "QQQ:", "\n";
        $to_h = $to;
     } else {
+print STDERR "RRR:", "\n";
 	$to_h = \do { local *FH }; # XXX is this line obsolete?
-	open $to_h, ">", $to or goto fail_open2;
+#	open $to_h, ">", $to or goto fail_open2;
+#	binmode $to_h or die "($!,$^E)";
+#	$closeto = 1;
+#    }
+	if (open $to_h, ">", $to) {
+print STDERR "SSS:", "\n";
 	binmode $to_h or die "($!,$^E)";
 	$closeto = 1;
     }
+    else {
+print STDERR "TTT:", "\n";
+        goto fail_open2;
+    }
+}
 
     $! = 0;
     for (;;) {
 	my ($r, $w, $t);
        defined($r = sysread($from_h, $buf, $size))
 	    or goto fail_inner;
-	last unless $r;
+#	last unless $r;
+	unless ($r) {
+print STDERR "UUU:", "\n";
+    last; 
+    }
 	for ($w = 0; $w < $r; $w += $t) {
            $t = syswrite($to_h, $buf, $r - $w, $w)
 		or goto fail_inner;
@@ -257,6 +307,7 @@ sub copy {
     # All of these contortions try to preserve error messages...
   fail_inner:
     if ($closeto) {
+print STDERR "VVV:", "\n";
 	$status = $!;
 	$! = 0;
        close $to_h;
@@ -264,12 +315,14 @@ sub copy {
     }
   fail_open2:
     if ($closefrom) {
+print STDERR "WWW:", "\n";
 	$status = $!;
 	$! = 0;
        close $from_h;
 	$! = $status unless $!;
     }
   fail_open1:
+print STDERR "XXX:", "\n";
     return 0;
 }
 
@@ -279,11 +332,16 @@ sub cp {
     my(@tostat) = stat $to;
     my $perm;
 
-    return 0 unless copy(@_) and @fromstat;
-
+#    return 0 unless copy(@_) and @fromstat;
+    unless (copy(@_) and @fromstat) {
+print STDERR "YYY:", "\n";
+    return 0;
+    }
     if (@tostat) {
+print STDERR "ZZZ:", "\n";
         $perm = $tostat[2];
     } else {
+print STDERR "!!!:", "\n";
         $perm = $fromstat[2] & ~(umask || 0);
 	@tostat = stat $to;
     }
